@@ -1,68 +1,83 @@
 package com.nanobot.bzzstromzaehlerservice.service;
 
-import com.nanobot.bzzstromzaehlerservice.model.MeterReading;
-import com.nanobot.bzzstromzaehlerservice.util.DataProcessor;
-import com.nanobot.bzzstromzaehlerservice.util.Exporter;
+import com.nanobot.bzzstromzaehlerservice.model.EslRecord;
+import com.nanobot.bzzstromzaehlerservice.model.ProcessedDataRecord;
+import com.nanobot.bzzstromzaehlerservice.model.SdatRecord;
 import com.nanobot.bzzstromzaehlerservice.util.FileParser;
-import com.nanobot.bzzstromzaehlerservice.util.Visualizer;
-import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class MeterDataService {
-    private List<MeterReading> sdatReadings = new ArrayList<>();
-    private List<MeterReading> eslReadings = new ArrayList<>();
 
-    private List<MeterReading> readings = new ArrayList<>();
+    @Autowired
+    private FileParser fileParser;
 
-    public void uploadFiles(List<MultipartFile> files) throws Exception {
-        List<MeterReading> sdatReadings = new ArrayList<>();
-        List<MeterReading> eslReadings = new ArrayList<>();
+    private String rootDirectory = System.getProperty("user.dir");
 
-        for (MultipartFile file : files) {
-            String fileName = file.getOriginalFilename();
-            if (fileName != null) {
-                if (fileName.contains("sdat")) {
-                    sdatReadings.addAll(FileParser.parseSdat(file.getInputStream()));
-                } else if (fileName.contains("esl")) {
-                    eslReadings.addAll(FileParser.parseEsl(file.getInputStream()));
+    @Value("${sdat.file.path}")
+    private String sdatFilePath;
+
+    @Value("${esl.file.path}")
+    private String eslFilePath;
+
+    private List<EslRecord> allEslRecords = new ArrayList<>();
+    private List<List<SdatRecord>> allSdatRecords = new ArrayList<>();
+    private List<ProcessedDataRecord> processedDataRecords = new ArrayList<>();
+
+    public List<ProcessedDataRecord> processFilesFromDirectories() throws Exception {
+
+
+        // Process SDAT files
+        File sdatDirectory = new File(rootDirectory + sdatFilePath);
+        if (sdatDirectory.isDirectory()) {
+            File[] files = sdatDirectory.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isFile()) {
+                        List<SdatRecord> records = fileParser.parseSdatFile(file);
+                        allSdatRecords.add(records);
+                    }
                 }
             }
         }
 
-        List<MeterReading> integratedData = DataProcessor.integrateData(sdatReadings, eslReadings);
-        this.readings = DataProcessor.calculateCumulativeValues(DataProcessor.sortByTimestamp(DataProcessor.removeDuplicates(integratedData)));
+        // Process ESL files
+        File eslDirectory = new File(rootDirectory + eslFilePath);
+        if (eslDirectory.isDirectory()) {
+            File[] files = eslDirectory.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isFile()) {
+                        List<EslRecord> records = fileParser.parseEslFile(file);
+                        allEslRecords.addAll(records);
+                    }
+                }
+            }
+        }
     }
 
-    public List<MeterReading> processFiles() {
-        List<MeterReading> allReadings = new ArrayList<>();
-        allReadings.addAll(DataProcessor.integrateData(sdatReadings, eslReadings));
-        return allReadings;
-    }
+    private void processRecords() {
+        List<List<SdatRecord>> allSdatRecords = new ArrayList<>();
 
-    public void exportToCsv(HttpServletResponse response) throws IOException {
-        Exporter.exportToCsv(processFiles(), response);
-    }
+        allSdatRecords.stream().flatMap(List::stream).
+                forEach(sdatRecord -> {
+                    String timestamp = sdatRecord.getTimestamp();
+                    String sequence = sdatRecord.getSequence();
+                    List<SdatRecord> sdatRecordList = allSdatRecords.stream().
+                            flatMap(List::stream).
+                            filter(record -> record.getTimestamp().equals(timestamp)).
+                            collect(Collectors.toList());
+                    sdatRecordList.sort((r1, r2) -> r1.getSequence().compareTo(r2.getSequence()));
+                    allSdatRecords.add(sdatRecordList);
+                });
 
-    public List<MeterReading> exportToJson() {
-        return Exporter.exportToJson(processFiles());
-    }
-
-    public Map<String, Object> visualizeConsumption() {
-        return Visualizer.plotConsumption(readings);
-    }
-
-    public Map<String, Object> visualizeMeterReadings() {
-        return Visualizer.plotMeterReadings(readings);
-    }
-
-    public List<MeterReading> getProcessedReadings() {
-        return readings;
-    }
 }
