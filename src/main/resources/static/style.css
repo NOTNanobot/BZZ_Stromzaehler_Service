@@ -1,0 +1,55 @@
+.color-square {
+    width: 20px;
+    height: 20px;
+    display: inline-block;
+    margin-right: 10px;
+    cursor: pointer;
+    border: 1px solid #000; 
+}
+
+.color-square.disabled {
+    opacity: 0.5; 
+}
+
+.color-square.visible {
+    border: 2px solid #000; 
+}
+
+.list-group-item {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+    padding: 5px;
+}
+
+.list-group-item:hover {
+    background-color: #f0f0f0; 
+}
+
+.half-width button {
+    width: calc(50% - 0.5rem);
+}
+
+.mt-3 {
+    margin-top: 1rem !important;
+}
+
+.mb-4 {
+    margin-bottom: 1.5rem !important;
+}
+
+.card {
+    margin-bottom: 1.5rem;
+}
+
+.btn-custom {
+    background-color: white;
+    border: 1px solid black;
+    color: black;
+}
+
+.btn-custom:hover {
+    background-color: #f0f0f0;
+    color: black;
+}

@@ -1,8 +1,11 @@
 package com.nanobot.bzzstromzaehlerservice.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nanobot.bzzstromzaehlerservice.model.EslRecord;
-import com.nanobot.bzzstromzaehlerservice.model.ProcessedDataRecord;
 import com.nanobot.bzzstromzaehlerservice.model.SdatRecord;
+import com.nanobot.bzzstromzaehlerservice.model.response.MeterDataResponse;
 import com.nanobot.bzzstromzaehlerservice.util.FileParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,8 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,11 +31,13 @@ public class MeterDataService {
     @Value("${esl.file.path}")
     private String eslFilePath;
 
+    @Value("${docID.processing}")
+    private List<String> processingDocIDs;
+
     private List<EslRecord> allEslRecords = new ArrayList<>();
     private List<List<SdatRecord>> allSdatRecords = new ArrayList<>();
-    private List<ProcessedDataRecord> processedDataRecords = new ArrayList<>();
 
-    public List<ProcessedDataRecord> processFilesFromDirectories() throws Exception {
+    public void processFilesFromDirectories() throws Exception {
 
 
         // Process SDAT files
@@ -44,6 +48,8 @@ public class MeterDataService {
                 for (File file : files) {
                     if (file.isFile()) {
                         List<SdatRecord> records = fileParser.parseSdatFile(file);
+
+                        
                         allSdatRecords.add(records);
                     }
                 }
@@ -63,21 +69,126 @@ public class MeterDataService {
                 }
             }
         }
+        for (EslRecord record : allEslRecords) {
+            System.out.println(record.getValue());
+        }
+        for (List<SdatRecord> records : allSdatRecords) {
+            for (SdatRecord record : records) {
+                System.out.println(record.getValue());
+            }
+        }
+        processRecords();
     }
 
     private void processRecords() {
-        List<List<SdatRecord>> allSdatRecords = new ArrayList<>();
+        /// Create a map to keep track of unique timestamps globally
+        Map<String, List<SdatRecord>> globalUniqueTimestamps = new LinkedHashMap<>();
 
-        allSdatRecords.stream().flatMap(List::stream).
-                forEach(sdatRecord -> {
-                    String timestamp = sdatRecord.getTimestamp();
-                    String sequence = sdatRecord.getSequence();
-                    List<SdatRecord> sdatRecordList = allSdatRecords.stream().
-                            flatMap(List::stream).
-                            filter(record -> record.getTimestamp().equals(timestamp)).
-                            collect(Collectors.toList());
-                    sdatRecordList.sort((r1, r2) -> r1.getSequence().compareTo(r2.getSequence()));
-                    allSdatRecords.add(sdatRecordList);
-                });
+        // Resulting list of lists without duplicates between lists
+        List<List<SdatRecord>> resultListOfLists = new ArrayList<>();
 
+        // Process each sublist
+        for (List<SdatRecord> sublist : allSdatRecords) {
+
+            if (!globalUniqueTimestamps.containsKey(sublist.get(1).getTimestamp())) {
+                globalUniqueTimestamps.put(sublist.get(1).getTimestamp(), sublist);
+                resultListOfLists.add(sublist);
+            }
+
+        }
+
+
+        // Sort SDAT records by timestamp
+        //uniqueSdatRecords.sort(Comparator.comparing(SdatRecord::getTimestamp));
+
+        // Remove duplicates based on timestamp for ESL records
+        List<EslRecord> uniqueEslRecords = allEslRecords.stream()
+                .collect(Collectors.collectingAndThen(
+                        Collectors.toMap(EslRecord::getTimestamp, record -> record, (record1, record2) -> record1),
+                        map -> new ArrayList<>(map.values())
+                ));
+
+        // Sort ESL records by timestamp
+        uniqueEslRecords.sort(Comparator.comparing(EslRecord::getTimestamp));
+
+        // Sum values for high tariff and low tariff
+        Map<String, Double> consumptionMap = new HashMap<>();
+        Map<String, Double> productionMap = new HashMap<>();
+
+        for (EslRecord record : uniqueEslRecords) {
+            String key = record.getTimestamp();
+            double value = Double.parseDouble(record.getValue());
+            if ("1-1:1.8.1".equals(record.getObis()) || "1-1:1.8.2".equals(record.getObis())) {
+                consumptionMap.merge(key, value, Double::sum);
+            } else if ("1-1:2.8.1".equals(record.getObis()) || "1-1:2.8.2".equals(record.getObis())) {
+                productionMap.merge(key, value, Double::sum);
+            }
+        }
+
+        // Generate JSON
+        generateJson(resultListOfLists, consumptionMap, productionMap);
+    }
+
+    private void generateJson(List<List<SdatRecord>> sdatRecords, Map<String, Double> consumptionMap, Map<String, Double> productionMap) {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode root = mapper.createObjectNode();
+
+        // Flatten the sdatRecords list of lists
+        List<SdatRecord> flattenedSdatRecords = sdatRecords.stream()
+                .flatMap(List::stream)
+                .collect(Collectors.toList());
+
+        // Generate meterData from SDAT records
+        ArrayNode meterDataArray = mapper.createArrayNode();
+        Map<String, List<SdatRecord>> sdatGroupedById = flattenedSdatRecords.stream()
+                .collect(Collectors.groupingBy(SdatRecord::getDocumentID));
+
+        for (Map.Entry<String, List<SdatRecord>> entry : sdatGroupedById.entrySet()) {
+            ObjectNode sensorDataNode = mapper.createObjectNode();
+            sensorDataNode.put("sensorId", entry.getKey());
+
+            ArrayNode dataArray = mapper.createArrayNode();
+            for (SdatRecord record : entry.getValue()) {
+                ObjectNode dataNode = mapper.createObjectNode();
+                dataNode.put("ts", record.getTimestamp());
+                dataNode.put("value", entry.getKey().equals("ID742") ? consumptionMap.getOrDefault(record.getTimestamp(), 0.0) : productionMap.getOrDefault(record.getTimestamp(), 0.0));
+                dataArray.add(dataNode);
+            }
+
+            sensorDataNode.set("data", dataArray);
+            meterDataArray.add(sensorDataNode);
+        }
+
+        // Generate volumeData from SDAT records
+        ArrayNode volumeDataArray = mapper.createArrayNode();
+        Map<String, List<SdatRecord>> sdatGroupedByTimestamp = flattenedSdatRecords.stream()
+                .collect(Collectors.groupingBy(SdatRecord::getTimestamp));
+
+        for (Map.Entry<String, List<SdatRecord>> entry : sdatGroupedByTimestamp.entrySet()) {
+            ObjectNode volumeNode = mapper.createObjectNode();
+            volumeNode.put("ts", entry.getKey());
+
+            ArrayNode dataArray = mapper.createArrayNode();
+            for (SdatRecord record : entry.getValue()) {
+                ObjectNode dataNode = mapper.createObjectNode();
+                dataNode.put("sequence", record.getSequence() != null ? Integer.parseInt(record.getSequence()) : 0);
+                dataNode.put("value", record.getValue() != null ? Double.parseDouble(record.getValue()) : 0.0);
+                dataArray.add(dataNode);
+            }
+
+            volumeNode.set("data", dataArray);
+            volumeDataArray.add(volumeNode);
+        }
+
+        root.set("meterData", meterDataArray);
+        root.set("volumeData", volumeDataArray);
+
+        // Convert to JSON string and log
+        try {
+            String jsonString = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+            log.info(jsonString);
+        } catch (Exception e) {
+            log.error("Failed to generate JSON", e);
+        }
+    }
 }

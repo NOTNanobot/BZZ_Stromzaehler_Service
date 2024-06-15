@@ -148,18 +148,6 @@ public class FileParser {
                     records.add(sdatRecord);
                 }
             }
-
-            // Print all extracted data
-            for (SdatRecord record : records) {
-                System.out.println(record);
-            }
-            // Remove duplicates based on timestamp
-            /*records = records.stream()
-                    .collect(Collectors.toMap(SdatRecord::getTimestamp, r -> r, (r1, r2) -> r1))
-                    .values()
-                    .stream()
-                    .sorted((r1, r2) -> r1.getTimestamp().compareTo(r2.getTimestamp()))
-                    .collect(Collectors.toList());*/
             return records;
 
         } catch (Exception e) {
