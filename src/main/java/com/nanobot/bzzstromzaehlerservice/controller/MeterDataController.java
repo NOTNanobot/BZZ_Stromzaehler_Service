@@ -16,8 +16,7 @@ public class MeterDataController {
 
     @GetMapping("/process")
     public ResponseEntity<String> processFilesFromDirectories() throws Exception {
-        service.processFilesFromDirectories();
-        return ResponseEntity.ok("Done");
+        return ResponseEntity.ok(service.processFilesFromDirectories());
     }
 
 }

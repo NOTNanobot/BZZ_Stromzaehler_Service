@@ -37,7 +37,7 @@ public class MeterDataService {
     private List<EslRecord> allEslRecords = new ArrayList<>();
     private List<List<SdatRecord>> allSdatRecords = new ArrayList<>();
 
-    public void processFilesFromDirectories() throws Exception {
+    public String processFilesFromDirectories() throws Exception {
 
 
         // Process SDAT files
@@ -69,18 +69,10 @@ public class MeterDataService {
                 }
             }
         }
-        for (EslRecord record : allEslRecords) {
-            System.out.println(record.getValue());
-        }
-        for (List<SdatRecord> records : allSdatRecords) {
-            for (SdatRecord record : records) {
-                System.out.println(record.getValue());
-            }
-        }
-        processRecords();
+        return processRecords();
     }
 
-    private void processRecords() {
+    private String processRecords() {
         /// Create a map to keep track of unique timestamps globally
         Map<String, List<SdatRecord>> globalUniqueTimestamps = new LinkedHashMap<>();
 
@@ -98,24 +90,11 @@ public class MeterDataService {
         }
 
 
-        // Sort SDAT records by timestamp
-        //uniqueSdatRecords.sort(Comparator.comparing(SdatRecord::getTimestamp));
-
-        // Remove duplicates based on timestamp for ESL records
-        List<EslRecord> uniqueEslRecords = allEslRecords.stream()
-                .collect(Collectors.collectingAndThen(
-                        Collectors.toMap(EslRecord::getTimestamp, record -> record, (record1, record2) -> record1),
-                        map -> new ArrayList<>(map.values())
-                ));
-
-        // Sort ESL records by timestamp
-        uniqueEslRecords.sort(Comparator.comparing(EslRecord::getTimestamp));
-
         // Sum values for high tariff and low tariff
         Map<String, Double> consumptionMap = new HashMap<>();
         Map<String, Double> productionMap = new HashMap<>();
 
-        for (EslRecord record : uniqueEslRecords) {
+        for (EslRecord record : allEslRecords) {
             String key = record.getTimestamp();
             double value = Double.parseDouble(record.getValue());
             if ("1-1:1.8.1".equals(record.getObis()) || "1-1:1.8.2".equals(record.getObis())) {
@@ -126,10 +105,10 @@ public class MeterDataService {
         }
 
         // Generate JSON
-        generateJson(resultListOfLists, consumptionMap, productionMap);
+        return generateJson(resultListOfLists, consumptionMap, productionMap);
     }
 
-    private void generateJson(List<List<SdatRecord>> sdatRecords, Map<String, Double> consumptionMap, Map<String, Double> productionMap) {
+    private String generateJson(List<List<SdatRecord>> sdatRecords, Map<String, Double> consumptionMap, Map<String, Double> productionMap) {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode root = mapper.createObjectNode();
 
@@ -151,7 +130,7 @@ public class MeterDataService {
             for (SdatRecord record : entry.getValue()) {
                 ObjectNode dataNode = mapper.createObjectNode();
                 dataNode.put("ts", record.getTimestamp());
-                dataNode.put("value", entry.getKey().equals("ID742") ? consumptionMap.getOrDefault(record.getTimestamp(), 0.0) : productionMap.getOrDefault(record.getTimestamp(), 0.0));
+                dataNode.put("value", entry.getKey().contains("ID742") ? consumptionMap.getOrDefault(record.getTimestamp(), 0.0) : productionMap.getOrDefault(record.getTimestamp(), 0.0));
                 dataArray.add(dataNode);
             }
 
@@ -187,8 +166,10 @@ public class MeterDataService {
         try {
             String jsonString = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
             log.info(jsonString);
+            return jsonString;
         } catch (Exception e) {
             log.error("Failed to generate JSON", e);
         }
+        return null;
     }
 }
