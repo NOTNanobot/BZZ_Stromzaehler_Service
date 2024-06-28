@@ -13,6 +13,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -36,6 +38,9 @@ public class MeterDataService {
 
     private List<EslRecord> allEslRecords = new ArrayList<>();
     private List<List<SdatRecord>> allSdatRecords = new ArrayList<>();
+
+    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'");
 
     public String processFilesFromDirectories() throws Exception {
 
@@ -89,32 +94,17 @@ public class MeterDataService {
 
         }
 
-
-        // Sum values for high tariff and low tariff
-        Map<String, Double> consumptionMap = new HashMap<>();
-        Map<String, Double> productionMap = new HashMap<>();
-
-        for (EslRecord record : allEslRecords) {
-            String key = record.getTimestamp();
-            double value = Double.parseDouble(record.getValue());
-            if ("1-1:1.8.1".equals(record.getObis()) || "1-1:1.8.2".equals(record.getObis())) {
-                consumptionMap.merge(key, value, Double::sum);
-            } else if ("1-1:2.8.1".equals(record.getObis()) || "1-1:2.8.2".equals(record.getObis())) {
-                productionMap.merge(key, value, Double::sum);
-            }
-        }
-
         // Generate JSON
-        return generateJson(resultListOfLists, consumptionMap, productionMap);
+        return generateJson();
     }
 
-    private String generateJson(List<List<SdatRecord>> sdatRecords, Map<String, Double> consumptionMap, Map<String, Double> productionMap) {
-        ObjectMapper mapper = new ObjectMapper();
+    private String generateJson() {
         ObjectNode root = mapper.createObjectNode();
 
-        // Flatten the sdatRecords list of lists
-        List<SdatRecord> flattenedSdatRecords = sdatRecords.stream()
+        // Flatten and sort the sdatRecords list of lists
+        List<SdatRecord> flattenedSdatRecords = allSdatRecords.stream()
                 .flatMap(List::stream)
+                .sorted(Comparator.comparing(r -> LocalDateTime.parse(r.getTimestamp(), dateTimeFormatter)))
                 .collect(Collectors.toList());
 
         // Generate meterData from SDAT records
@@ -127,40 +117,95 @@ public class MeterDataService {
             sensorDataNode.put("sensorId", entry.getKey());
 
             ArrayNode dataArray = mapper.createArrayNode();
+            LocalDateTime currentTimestamp = null;
+            int sequenceCount = 0;
+
             for (SdatRecord record : entry.getValue()) {
+                LocalDateTime recordTimestamp = LocalDateTime.parse(record.getTimestamp(), dateTimeFormatter);
+
+                if (currentTimestamp == null) {
+                    currentTimestamp = recordTimestamp;
+                }
+
+                // Add padding records if there's a gap
+                while (currentTimestamp.isBefore(recordTimestamp)) {
+                    if (sequenceCount == 96) {
+                        sequenceCount = 0;
+                    }
+
+                    ObjectNode paddingNode = mapper.createObjectNode();
+                    paddingNode.put("ts", currentTimestamp.format(dateTimeFormatter));
+                    paddingNode.put("value", 0); // Assuming 0 for padding
+                    paddingNode.put("sequence", sequenceCount);
+                    dataArray.add(paddingNode);
+
+                    currentTimestamp = currentTimestamp.plusMinutes(15);
+                    sequenceCount++;
+                }
+
+                if (sequenceCount == 96) {
+                    sequenceCount = 0;
+                }
+
                 ObjectNode dataNode = mapper.createObjectNode();
                 dataNode.put("ts", record.getTimestamp());
-                dataNode.put("value", entry.getKey().contains("ID742") ? consumptionMap.getOrDefault(record.getTimestamp(), 0.0) : productionMap.getOrDefault(record.getTimestamp(), 0.0));
+                dataNode.put("value", record.getValue());
+                dataNode.put("sequence", sequenceCount);
                 dataArray.add(dataNode);
+
+                currentTimestamp = currentTimestamp.plusMinutes(15);
+                sequenceCount++;
             }
 
             sensorDataNode.set("data", dataArray);
             meterDataArray.add(sensorDataNode);
         }
 
-        // Generate volumeData from SDAT records
+        // Generate volumeData from ESL records
         ArrayNode volumeDataArray = mapper.createArrayNode();
-        Map<String, List<SdatRecord>> sdatGroupedByTimestamp = flattenedSdatRecords.stream()
-                .collect(Collectors.groupingBy(SdatRecord::getTimestamp));
+        Map<String, Map<String, EslRecord>> eslGroupedByTimestampAndObis = allEslRecords.stream()
+                .collect(Collectors.groupingBy(EslRecord::getTimestamp, Collectors.toMap(EslRecord::getObis, e -> e, (e1, e2) -> e1)));
 
-        for (Map.Entry<String, List<SdatRecord>> entry : sdatGroupedByTimestamp.entrySet()) {
+        // For building consumption and production data
+        ArrayNode consumptionProductionArray = mapper.createArrayNode();
+
+        for (Map.Entry<String, Map<String, EslRecord>> timestampEntry : eslGroupedByTimestampAndObis.entrySet()) {
             ObjectNode volumeNode = mapper.createObjectNode();
-            volumeNode.put("ts", entry.getKey());
+            volumeNode.put("ts", timestampEntry.getKey());
 
             ArrayNode dataArray = mapper.createArrayNode();
-            for (SdatRecord record : entry.getValue()) {
+            double consumption = 0.0;
+            double production = 0.0;
+
+            for (Map.Entry<String, EslRecord> obisEntry : timestampEntry.getValue().entrySet()) {
+                EslRecord record = obisEntry.getValue();
                 ObjectNode dataNode = mapper.createObjectNode();
-                dataNode.put("sequence", record.getSequence() != null ? Integer.parseInt(record.getSequence()) : 0);
-                dataNode.put("value", record.getValue() != null ? Double.parseDouble(record.getValue()) : 0.0);
+                dataNode.put("obis", obisEntry.getKey());
+                dataNode.put("value", record.getValue());
                 dataArray.add(dataNode);
+
+                // Aggregate consumption and production values
+                if (obisEntry.getKey().equals("1-1:1.8.1") || obisEntry.getKey().equals("1-1:1.8.2")) {
+                    consumption += Double.parseDouble(record.getValue());
+                } else if (obisEntry.getKey().equals("1-1:2.8.1") || obisEntry.getKey().equals("1-1:2.8.2")) {
+                    production += Double.parseDouble(record.getValue());
+                }
             }
 
             volumeNode.set("data", dataArray);
             volumeDataArray.add(volumeNode);
+
+            // Add to consumption and production array
+            ObjectNode cpNode = mapper.createObjectNode();
+            cpNode.put("ts", timestampEntry.getKey());
+            cpNode.put("consumption", consumption);
+            cpNode.put("production", production);
+            consumptionProductionArray.add(cpNode);
         }
 
         root.set("meterData", meterDataArray);
         root.set("volumeData", volumeDataArray);
+        root.set("consumptionProduction", consumptionProductionArray);
 
         // Convert to JSON string and log
         try {

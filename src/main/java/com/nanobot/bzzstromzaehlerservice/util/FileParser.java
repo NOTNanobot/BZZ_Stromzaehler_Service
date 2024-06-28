@@ -110,7 +110,7 @@ public class FileParser {
 
             // Retrieve the DocumentID element
             NodeList documentIDList = doc.getElementsByTagName("rsm:DocumentID");
-            String documentID = documentIDList.item(0).getTextContent();
+            String documentID = documentIDList.item(0).getTextContent().substring(20,25);
 
             // Retrieve the Interval element for timestamps
             NodeList intervalList = doc.getElementsByTagName("rsm:Interval");
