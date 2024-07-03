@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Controller
 public class WebController {
 
-    @GetMapping("/home")
+    @GetMapping("/")
     public String home(){
         return "dia_1";
     }
