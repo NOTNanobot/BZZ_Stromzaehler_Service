@@ -10,7 +10,12 @@ import com.nanobot.bzzstromzaehlerservice.util.FileParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import java.io.*;
 import java.time.LocalDateTime;
@@ -35,6 +40,9 @@ public class MeterDataService {
 
     @Value("${docID.processing}")
     private List<String> processingDocIDs;
+
+    @Value("${external.server.url}")
+    private String externalServerUrl;
 
     private List<EslRecord> allEslRecords = new ArrayList<>();
     private List<List<SdatRecord>> allSdatRecords = new ArrayList<>();
@@ -118,7 +126,7 @@ public class MeterDataService {
 
             ArrayNode dataArray = mapper.createArrayNode();
             LocalDateTime currentTimestamp = null;
-            int sequenceCount = 0;
+            int sequenceCount = 1;
 
             for (SdatRecord record : entry.getValue()) {
                 LocalDateTime recordTimestamp = LocalDateTime.parse(record.getTimestamp(), dateTimeFormatter);
@@ -130,7 +138,7 @@ public class MeterDataService {
                 // Add padding records if there's a gap
                 while (currentTimestamp.isBefore(recordTimestamp)) {
                     if (sequenceCount == 96) {
-                        sequenceCount = 0;
+                        sequenceCount = 1;
                     }
 
                     ObjectNode paddingNode = mapper.createObjectNode();
@@ -216,5 +224,82 @@ public class MeterDataService {
             log.error("Failed to generate JSON", e);
         }
         return null;
+    }
+    public File exportConsumptionProductionToCsv() throws IOException {
+        // Create a temporary CSV file
+        File csvFile = File.createTempFile("consumption_production", ".csv");
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(csvFile))) {
+            writer.write("Timestamp,Consumption,Production");
+            writer.newLine();
+
+            ArrayNode consumptionProductionArray = generateConsumptionProductionArray();
+
+            for (int i = 0; i < consumptionProductionArray.size(); i++) {
+                ObjectNode record = (ObjectNode) consumptionProductionArray.get(i);
+                String timestamp = record.get("ts").asText();
+                double consumption = record.get("consumption").asDouble();
+                double production = record.get("production").asDouble();
+
+                writer.write(String.format("%s,%f,%f", timestamp, consumption, production));
+                writer.newLine();
+            }
+        }
+
+        return csvFile;
+    }
+
+    private ArrayNode generateConsumptionProductionArray() {
+        // This method generates the consumption and production array in JSON format
+        // You can reuse the logic from the generateJson() method
+        ArrayNode consumptionProductionArray = mapper.createArrayNode();
+        Map<String, Map<String, EslRecord>> eslGroupedByTimestampAndObis = allEslRecords.stream()
+                .collect(Collectors.groupingBy(EslRecord::getTimestamp, Collectors.toMap(EslRecord::getObis, e -> e, (e1, e2) -> e1)));
+
+        for (Map.Entry<String, Map<String, EslRecord>> timestampEntry : eslGroupedByTimestampAndObis.entrySet()) {
+            double consumption = 0.0;
+            double production = 0.0;
+
+            for (Map.Entry<String, EslRecord> obisEntry : timestampEntry.getValue().entrySet()) {
+                EslRecord record = obisEntry.getValue();
+
+                // Aggregate consumption and production values
+                if (obisEntry.getKey().equals("1-1:1.8.1") || obisEntry.getKey().equals("1-1:1.8.2")) {
+                    consumption += Double.parseDouble(record.getValue());
+                } else if (obisEntry.getKey().equals("1-1:2.8.1") || obisEntry.getKey().equals("1-1:2.8.2")) {
+                    production += Double.parseDouble(record.getValue());
+                }
+            }
+
+            ObjectNode cpNode = mapper.createObjectNode();
+            cpNode.put("ts", timestampEntry.getKey());
+            cpNode.put("consumption", consumption);
+            cpNode.put("production", production);
+            consumptionProductionArray.add(cpNode);
+        }
+
+        return consumptionProductionArray;
+    }
+
+    public boolean sendJsonToServer() {
+        String jsonData = generateJson();
+
+        if (jsonData != null && !jsonData.isEmpty()) {
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<String> request = new HttpEntity<>(jsonData, headers);
+            try {
+                ResponseEntity<String> response = restTemplate.postForEntity(externalServerUrl, request, String.class);
+                return response.getStatusCode().is2xxSuccessful();
+            } catch (Exception e) {
+                log.error("Failed to send JSON to the external server", e);
+                return false;
+            }
+        } else {
+            log.error("JSON data is empty or null");
+            return false;
+        }
     }
 }
