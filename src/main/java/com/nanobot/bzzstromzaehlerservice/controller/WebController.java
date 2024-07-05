@@ -11,4 +11,9 @@ public class WebController {
     public String home(){
         return "dia_1";
     }
+
+    @GetMapping("/script")
+    public String script() {
+        return "script.js";
+    }
 }

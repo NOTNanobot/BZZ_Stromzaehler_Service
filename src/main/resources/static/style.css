@@ -1,0 +1,217 @@
+.color-square {
+    width: 20px;
+    height: 20px;
+    display: inline-block;
+    margin-right: 10px;
+    cursor: pointer;
+    border: 1px solid #000; 
+}
+
+.color-square.disabled {
+    opacity: 0.5; 
+}
+
+.color-square.visible {
+    border: 2px solid #000; 
+}
+
+.list-group-item {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+    padding: 5px;
+}
+
+.list-group-item:hover {
+    background-color: #f0f0f0; 
+}
+
+.half-width button {
+    width: calc(50% - 0.5rem);
+}
+
+.mt-3 {
+    margin-top: 1rem !important;
+}
+
+.mb-4 {
+    margin-bottom: 1.5rem !important;
+}
+
+.card {
+    margin-bottom: 1.5rem;
+}
+
+.btn-custom {
+    background-color: white;
+    border: 1px solid black;
+    color: black;
+}
+
+.btn-custom:hover {
+    background-color: #f0f0f0;
+    color: black;
+}
+
+.sticky-sidebar {
+    position: sticky;
+    top: 10px; /* Adjust based on your header height */
+    height: calc(100vh - 20px); /* Adjust to fit within the viewport */
+    overflow-y: auto; /* Allows the sidebar to scroll if the content is too long */
+    background-color: white; /* Ensures buttons don't overlap with other content */
+    padding-bottom: 20px; /* Adds padding to the bottom */
+}
+
+
+
+/* Stile für die button-container */
+.button-container {
+    display: flex;
+    justify-content: space-between;
+    border-top: 1px solid #ccc; /* Rahmen oben für Verbindung zur chart-container */
+    padding-top: 10px; /* Innenabstand über den Buttons */
+    margin-top: 15px; /* Abstand nach oben für bessere Trennung */
+}
+
+
+.chart-container {
+    border: 1px solid #ccc;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    position: relative;
+    transition: opacity 0.3s ease; /* Übergangseffekt für Opazität */
+}
+
+#chartIndicator {
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out; /* Übergangseffekt für Opazität */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 10px;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    z-index: 1; /* sicherstellen, dass der Indikator über den Diagrammen liegt */
+}
+
+
+.fade-out {
+    opacity: 0.7;
+}
+
+
+body.dark-mode {
+    background-color: #121212;
+    color: #e0e0e0;
+}
+
+body.dark-mode .navbar {
+    background-color: #181818;
+}
+
+body.dark-mode .card {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+    border-color: #333;
+}
+
+body.dark-mode .btn-custom {
+    background-color: #2a2a2a;
+    color: #e0e0e0;
+    border-color: #444;
+}
+
+body.dark-mode .btn-custom:hover {
+    background-color: #3a3a3a;
+}
+
+body.dark-mode .list-group-item {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+}
+
+body.dark-mode .list-group-item:hover {
+    background-color: #2e2e2e;
+}
+
+body.dark-mode .chart-container {
+    background-color: #1e1e1e;
+    border-color: #333;
+}
+
+body.dark-mode .sticky-sidebar {
+    background-color: #121212;
+    color: #e0e0e0;
+    border-color: #333;
+}
+
+body.dark-mode .sticky-sidebar .btn-custom {
+    background-color: #2a2a2a;
+    color: #e0e0e0;
+    border-color: #444;
+}
+
+body.dark-mode .sticky-sidebar .btn-custom:hover {
+    background-color: #3a3a3a;
+}
+
+body.dark-mode .sticky-sidebar .d-flex {
+    background-color: #1e1e1e;
+}
+
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 60px;
+    height: 24px;
+    background-color: #f8f9fa;
+    border-radius: 12px;
+    padding: 3px;
+    cursor: pointer;
+    position: relative;
+}
+
+.toggle-button {
+    height: 20px;
+    width: 20px;
+    background-color: #343a40;
+    border-radius: 50%;
+    position: absolute;
+    transition: transform 0.3s ease;
+}
+
+.dark-mode .toggle-button {
+    transform: translateX(0);
+}
+
+.light-mode .toggle-button {
+    transform: translateX(36px);
+    background-color: #f8f9fa;
+}
+
+.icon {
+    font-size: 16px;
+}
+
+.light-mode .icon-dark {
+    color: #343a40;
+}
+
+.light-mode .icon-light {
+    color: #343a40;
+}
+
+.dark-mode .icon-dark {
+    color: #f8f9fa;
+}
+
+.dark-mode .icon-light {
+    color: #f8f9fa;
+}
+
