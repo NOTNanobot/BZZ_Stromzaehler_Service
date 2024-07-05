@@ -12,8 +12,12 @@ public class WebController {
         return "dia_1";
     }
 
+    @GetMapping("/css")
+    public String css(){
+        return "style.css";
+    }
     @GetMapping("/script")
-    public String script() {
+    public String script(){
         return "script.js";
     }
 }
